@@ -378,16 +378,17 @@ function rebuildTableFromData(rows) {
     const qEl = document.getElementById('qty-' + id);
     if (qEl && r.qty) {
       const fmap = GROWERS[currentGrower].fields || {};
-      const autoTotal = (r.fields || []).reduce((s, f) => s + (fmap[f] || 0), 0);
+      const autoTotal = (r.fields || []).reduce((s, f) => s + (fmap[f] || 0), 0) * catMult(id);
       qEl.dataset.manual = (Number(r.qty) !== autoTotal) ? 'true' : '';
     }
-    // Refresh stale auto-descriptions (e.g. rows saved before "Field #" was added) and keep them
-    // auto-updatable, but preserve a genuinely custom note exactly as it was typed.
+    // Restore the description exactly as saved. Rows carry a descManual flag; older rows
+    // without it fall back to the descIsAuto heuristic. Manual text is never rewritten.
     const dEl = document.getElementById('desc-' + id);
     if (dEl) {
       dEl.dataset.auto = buildDescription(id);
-      if (descIsAuto(id, r.desc || '')) { dEl.dataset.manual = ''; dEl.value = dEl.dataset.auto; }
-      else { dEl.dataset.manual = 'true'; }
+      const manual = (r.descManual !== undefined) ? !!r.descManual : !descIsAuto(id, r.desc || '');
+      if (manual) { dEl.dataset.manual = 'true'; dEl.value = r.desc || ''; }
+      else { dEl.dataset.manual = ''; dEl.value = dEl.dataset.auto; }
     }
     if (r.unit) setUnit(id, r.unit);
     calcRow(id);
@@ -412,7 +413,7 @@ const GROWERS = {
     fields: {
       '1':98,'2':37,'3N':36,'3S':29,'4':99,'5':95,'6':98,'7':81,'8':79,
       '9':84,'10':85,'11':57,'12':16,'13':37,'14':37,'15':9,'16':36,
-      '17':95,'18':81,'19':71,'20':160,
+      '17':95,'18':81,'19':71,'20N':80,'20S':80,
       'R1':2,'R2':16,'R3':3,'R4':26,'R5':82,'R6':77,'R14':85,'R15':86
     }
   },
@@ -437,7 +438,9 @@ const CATEGORIES = [
   { code: '3C',  desc: 'Chiseling',               price: 80,  unit: 'AC' },
   { code: '3CH', desc: 'Circle Harrow',           price: 28,  unit: 'AC' },
   { code: '3D',  desc: 'Discing',                 price: 36,  unit: 'AC' },
+  { code: '3D',  desc: 'Discing x2',              price: 36,  unit: 'AC', mult: 2 },
   { code: '3DB', desc: 'Disc Bedding',            price: 30,  unit: 'AC' },
+  { code: '3DE', desc: 'Discing Ends',            price: 130, unit: 'HR' },
   { code: '3DT', desc: 'Ditches',                 price: 130, unit: 'HR' },
   { code: '3F',  desc: 'Fertilizing/Furrow Out',  price: 36,  unit: 'AC' },
   { code: '3G',  desc: 'Graderboarding',          price: 21,  unit: 'AC' },
@@ -645,9 +648,9 @@ function setAutoQty(id, val) {
 
 function descEdited(id) {
   const el = document.getElementById('desc-' + id);
-  // Only treat it as a manual edit if the text differs from the auto-generated description,
-  // so choosing a field/category always keeps the "Field #" prefix up to date.
-  el.dataset.manual = (el.value && el.value !== el.dataset.auto) ? 'true' : '';
+  // Anything the user types is manual and must never be overwritten.
+  // Clearing the box hands the description back to auto-fill.
+  el.dataset.manual = el.value ? 'true' : '';
   scheduleSave();
 }
 
@@ -682,6 +685,14 @@ function descIsAuto(id, saved) {
     if (prefix === '' || prefix === 'All Fields' || /^Field .+$/.test(prefix)) return true;
   }
   return false;
+}
+
+// Acre multiplier for the row's selected category (e.g. Discing x2 doubles the acres).
+function catMult(id) {
+  const val = document.getElementById('cat-' + id)?.value || '';
+  const [code, descPart] = val.split('|');
+  const c = CATEGORIES.find(c => c.code === code && c.desc === descPart);
+  return (c && c.mult) || 1;
 }
 
 function toggleFieldPanel(id) {
@@ -728,7 +739,7 @@ function applyField(id) {
   } else {
     trig.textContent = checked.join(', ');
     trig.classList.add('has-val');
-    if (setAutoQty(id, totalAcres)) setUnit(id, 'AC');
+    if (setAutoQty(id, totalAcres * catMult(id))) setUnit(id, 'AC');
     calcRow(id);
   }
   setAutoDesc(id, buildDescription(id));
@@ -770,6 +781,15 @@ function applyCategory(id, overwritePrice=true) {
     }
     if (cat.unit) setUnit(id, cat.unit);
   }
+  // Re-apply the auto acre total so multiplier categories (e.g. Discing x2)
+  // update the qty when the category changes after fields are picked.
+  const checked = getSelectedFields(id);
+  const fmap = GROWERS[currentGrower].fields || {};
+  const isAll = checked.length > 0 && checked.length === Object.keys(fmap).length;
+  if (checked.length && !isAll) {
+    const acres = checked.reduce((s, f) => s + (fmap[f] || 0), 0);
+    setAutoQty(id, acres * catMult(id));
+  }
   setAutoDesc(id, buildDescription(id));
   calcRow(id);
 }
@@ -793,13 +813,15 @@ function getRows() {
     const allCount = Object.keys(GROWERS[currentGrower].fields || {}).length;
     const field  = (fields.length > 0 && fields.length === allCount) ? 'All Fields' : fields.join(', ');
     const catVal = document.getElementById('cat-' + id)?.value || '';
-    const desc  = document.getElementById('desc-' + id)?.value || '';
+    const descEl = document.getElementById('desc-' + id);
+    const desc  = descEl?.value || '';
+    const descManual = descEl?.dataset.manual === 'true';
     const qty   = parseFloat(document.getElementById('qty-' + id)?.value) || 0;
     const price = parseFloat(tr.querySelectorAll('input[type=number]')[1]?.value) || 0;
     const unit  = document.getElementById('unit-' + id)?.textContent.trim() || 'AC';
     const [catCode='', catDesc=''] = catVal.split('|');
     const total = qty * price;
-    rows.push({ date, fields, field, catVal, desc, qty, price, unit, catCode, catDesc, total });
+    rows.push({ date, fields, field, catVal, desc, descManual, qty, price, unit, catCode, catDesc, total });
   });
   return rows;
 }
@@ -1099,7 +1121,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 init();
-// v2 — undo, All Fields on exports, friendly filenames, sticky acres/hours
+// v3 — sticky manual descriptions, 3DE + Discing x2 categories, field 20 split into 20N/20S
 </script>
 </body>
 </html>
