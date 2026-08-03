@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grower Monthly Billing</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f0f2f5; color: #222; }
+  header { background: #1a5c2a; color: white; padding: 16px 24px; }
+  header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 1.3rem; font-weight: 600; }
+  .sync-badge { font-size: 0.75rem; padding: 4px 10px; border-radius: 12px; font-weight: 600; white-space: nowrap; }
+  .sync-badge.synced  { background: #2ecc71; color: white; }
+  .sync-badge.saving  { background: #f39c12; color: white; }
+  .sync-badge.offline { background: #e74c3c; color: white; }
+  .sync-badge.no-cfg  { background: rgba(255,255,255,0.2); color: white; }
+  .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+
+  .card { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 1rem; font-weight: 600; color: #1a5c2a; margin-bottom: 14px; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px; }
+
+  .form-row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 160px; }
+  .form-group label { font-size: 0.78rem; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.4px; }
+  .form-group input, .form-group select { border: 1px solid #ccc; border-radius: 4px; padding: 7px 10px; font-size: 0.9rem; }
+  .form-group input:focus, .form-group select:focus { outline: none; border-color: #1a5c2a; }
+
+  /* Growers section */
+  .grower-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .grower-tab { padding: 8px 20px; border: 2px solid #ccc; border-radius: 20px; cursor: pointer; font-size: 0.9rem; background: white; transition: all 0.15s; }
+  .grower-tab.active { border-color: #1a5c2a; background: #1a5c2a; color: white; font-weight: 600; }
+
+  /* Line items table */
+  .table-wrapper { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th { background: #1a5c2a; color: white; padding: 8px 10px; text-align: left; white-space: nowrap; }
+  td { padding: 5px 6px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  tr:hover td { background: #f9fffe; }
+  td input, td select { width: 100%; border: 1px solid #ddd; border-radius: 3px; padding: 5px 6px; font-size: 0.85rem; background: white; }
+  td input:focus, td select:focus { outline: none; border-color: #1a5c2a; background: #f0fff4; }
+  .unit-toggle { display: flex; gap: 0; }
+  .unit-toggle input[type=number] { border-radius: 3px 0 0 3px; border-right: none; flex: 1; min-width: 0; }
+  .unit-btn { padding: 5px 8px; font-size: 0.75rem; font-weight: 700; border: 1px solid #ddd; background: #f0f0f0; cursor: pointer; white-space: nowrap; border-radius: 0 3px 3px 0; color: #555; min-width: 34px; text-align: center; transition: all 0.1s; }
+  .unit-btn.ac { background: #e8f5e9; color: #1a5c2a; border-color: #1a5c2a; }
+  .unit-btn.hr { background: #e3f2fd; color: #1565c0; border-color: #1565c0; }
+  .total-cell { font-weight: 600; color: #1a5c2a; text-align: right; padding-right: 10px; min-width: 80px; }
+  .delete-btn { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 1.1rem; padding: 2px 6px; border-radius: 3px; }
+  .delete-btn:hover { background: #fdf0ee; }
+
+  .btn { padding: 9px 18px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.88rem; font-weight: 600; transition: background 0.15s; }
+  .btn-green { background: #1a5c2a; color: white; }
+  .btn-green:hover { background: #154d22; }
+  .btn-outline { background: white; border: 2px solid #1a5c2a; color: #1a5c2a; }
+  .btn-outline:hover { background: #f0fff4; }
+  .btn-blue { background: #1a4a8a; color: white; }
+  .btn-blue:hover { background: #163d74; }
+
+  .actions-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+
+  .summary-box { background: #f0fff4; border: 1px solid #b2dfdb; border-radius: 6px; padding: 14px 18px; font-size: 0.9rem; }
+  .summary-box .line { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #d0eed8; }
+  .summary-box .line:last-child { border-bottom: none; font-weight: 700; font-size: 1rem; color: #1a5c2a; margin-top: 4px; }
+  .summary-box .line span:last-child { font-weight: 600; }
+
+  .mgmt-fees { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .mgmt-fee-item { flex: 1; min-width: 200px; background: #f8f8f8; border: 1px solid #ddd; border-radius: 5px; padding: 10px 14px; font-size: 0.85rem; }
+  .mgmt-fee-item label { display: block; font-weight: 700; color: #555; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 4px; }
+  .mgmt-fee-item .fee-display { color: #1a5c2a; font-weight: 600; }
+
+  .month-display { font-size: 0.95rem; color: #666; margin-left: auto; }
+
+  /* Grower config panel */
+  .config-panel { display: none; background: #fffbf0; border: 1px solid #f0d080; border-radius: 6px; padding: 14px; margin-bottom: 14px; font-size: 0.85rem; }
+  .config-panel.open { display: block; }
+  .config-panel h3 { font-size: 0.82rem; font-weight: 700; color: #7a5c00; text-transform: uppercase; margin-bottom: 10px; }
+  .config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .config-field { display: flex; flex-direction: column; gap: 3px; }
+  .config-field label { font-size: 0.74rem; font-weight: 600; color: #666; }
+  .config-field input { border: 1px solid #ccc; border-radius: 3px; padding: 5px 8px; font-size: 0.85rem; }
+
+  footer { text-align: center; color: #999; font-size: 0.78rem; padding: 24px; }
+  .manager-mode .billing-summary-card { display: none; }
+  .manager-mode .mgmt-fees,
+  .manager-mode .config-toggle-btn,
+  .manager-mode .config-panel { display: none; }
+  .manager-mode .col-price,
+  .manager-mode .col-total { display: none; }
+  .manager-banner { background: #1565c0; color: white; text-align: center; padding: 6px; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.3px; }
+
+  /* Multi-select field dropdown */
+  .field-wrap { position: relative; }
+  .field-trigger { width: 100%; border: 1px solid #ddd; border-radius: 3px; padding: 5px 6px; font-size: 0.82rem; background: white; cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 28px; color: #444; }
+  .field-trigger.has-val { color: #1a5c2a; font-weight: 600; border-color: #1a5c2a; }
+  .field-panel { display: none; position: absolute; top: 100%; left: 0; z-index: 999; background: white; border: 1px solid #1a5c2a; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px; max-height: 260px; overflow-y: auto; padding: 4px 0; }
+  .field-panel.open { display: block; }
+  .field-panel label { display: flex; align-items: center; gap: 7px; padding: 5px 10px; font-size: 0.83rem; cursor: pointer; white-space: nowrap; }
+  .field-panel label:hover { background: #f0fff4; }
+  .field-panel label input[type=checkbox] { accent-color: #1a5c2a; width: 13px; height: 13px; flex-shrink: 0; }
+  .field-panel .acres-hint { color: #999; font-size: 0.75rem; margin-left: auto; padding-left: 8px; }
+</style>
+</head>
+<body>
+
+<div class="manager-banner" id="managerBanner" style="display:none;">📋 Work Entry Mode — Enter completed work below</div>
+<header>
+  <h1>🌾 Grower Monthly Billing</h1>
+  <span class="sync-badge no-cfg" id="syncBadge">⚙ Firebase not configured</span>
+</header>
+
+<div class="container">
+
+  <!-- Grower & Month Selection -->
+  <div class="card billing-setup-card">
+    <h2>Billing Setup</h2>
+    <div class="grower-tabs" id="growerTabs"></div>
+    <div class="form-row" style="margin-bottom:12px;">
+      <div class="form-group" style="max-width:200px;">
+        <label>Billing Month</label>
+        <input type="month" id="billingMonth">
+      </div>
+    </div>
+
+    <div id="mgmtFeeDisplay" class="mgmt-fees"></div>
+
+    <button class="btn btn-outline config-toggle-btn" style="font-size:0.78rem;padding:5px 12px;" onclick="toggleConfig()">⚙ Edit Grower Settings</button>
+    <div class="config-panel" id="configPanel">
+      <h3>Grower Configuration</h3>
+      <div class="config-grid" id="configGrid"></div>
+    </div>
+  </div>
+
+  <!-- Line Items -->
+  <div class="card">
+    <h2>Work Entries</h2>
+    <div class="table-wrapper">
+      <table id="lineTable">
+        <thead>
+          <tr>
+            <th style="width:110px;">Date</th>
+            <th style="width:80px;">Field #</th>
+            <th style="width:150px;">Category</th>
+            <th style="min-width:180px;">Description</th>
+            <th style="width:120px;">Acres / Hours</th>
+            <th style="width:90px;" class="col-price">Price</th>
+            <th style="width:90px;" class="col-total">Total</th>
+            <th style="width:36px;"></th>
+          </tr>
+        </thead>
+        <tbody id="lineBody"></tbody>
+      </table>
+    </div>
+    <div class="actions-row">
+      <button class="btn btn-outline" onclick="addRow()">+ Add Row</button>
+      <button class="btn btn-outline" onclick="addRows5()">+ Add 5 Rows</button>
+      <button class="btn btn-outline" id="undoBtn" onclick="undoLast()" disabled title="Undo last change">&#8630; Undo</button>
+    </div>
+  </div>
+
+  <!-- Summary & Export -->
+  <div class="card billing-summary-card">
+    <h2>Billing Summary</h2>
+    <div id="summaryBox" class="summary-box"></div>
+    <div class="actions-row" style="margin-top:16px;">
+      <button class="btn btn-blue" onclick="exportExcel()">⬇ Download Excel (.xlsx)</button>
+      <button class="btn btn-green" onclick="exportPDF()">⬇ Download PDF</button>
+      <button class="btn btn-outline" onclick="clearEntries()">Clear Entries</button>
+    </div>
+  </div>
+
+</div>
+
+<footer>Grower Billing App &mdash; Data is saved in your browser while the page is open</footer>
+
+<script>
+// ── Firebase Configuration ────────────────────────────────────────────────────
+// REPLACE the values below with your own Firebase project config
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyAofzj9hQFg-wHMLLY9014MLcSjVgAefNg",
+  authDomain:        "grower-billing.firebaseapp.com",
+  projectId:         "grower-billing",
+  storageBucket:     "grower-billing.firebasestorage.app",
+  messagingSenderId: "729214633177",
+  appId:             "1:729214633177:web:e3253e0423790f70ac2ac8"
+};
+
+// ── Firebase init ─────────────────────────────────────────────────────────────
+let db = null;
+let unsubscribe = null;
+let saveTimer = null;
+let isLoadingFromRemote = false;
+let lastSaveTime = 0;
+let activeKey = null;       // the grower_month record currently loaded & being edited
+
+function firebaseConfigured() {
+  return !FIREBASE_CONFIG.apiKey.startsWith('PASTE');
+}
+
+function initFirebase() {
+  if (!firebaseConfigured()) return;
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    setSyncBadge('synced', '✓ Synced');
+  } catch(e) {
+    setSyncBadge('offline', '✗ Sync error');
+    console.error('Firebase init error:', e);
+  }
+}
+
+function setSyncBadge(state, text) {
+  const el = document.getElementById('syncBadge');
+  el.className = 'sync-badge ' + state;
+  el.textContent = text;
+}
+
+function docKey() {
+  const month = document.getElementById('billingMonth').value || 'draft';
+  return `${currentGrower}_${month}`;
+}
+
+// ── Undo ─────────────────────────────────────────────────────────────────────
+let undoStack = [];
+let isUndoing = false;
+
+function updateUndoButton() {
+  const btn = document.getElementById('undoBtn');
+  if (btn) btn.disabled = undoStack.length < 2;
+}
+
+// Push the current table state onto the undo stack (deduped, capped at 50).
+// Coalesced with a 0ms timer so one user action = one snapshot.
+let snapshotTimer = null;
+function snapshotNow() {
+  try {
+    const s = JSON.stringify(getRows());
+    if (undoStack.length && undoStack[undoStack.length - 1] === s) return;
+    undoStack.push(s);
+    if (undoStack.length > 50) undoStack.shift();
+    updateUndoButton();
+  } catch (e) {}
+}
+function snapshotForUndo() {
+  if (isLoadingFromRemote || isUndoing) return;
+  if (snapshotTimer) return;
+  snapshotTimer = setTimeout(() => { snapshotTimer = null; snapshotNow(); }, 0);
+}
+
+// Reset the stack to a single baseline of the current state (on load / grower / month switch).
+function resetUndoBaseline() {
+  try { undoStack = [JSON.stringify(getRows())]; } catch (e) { undoStack = []; }
+  updateUndoButton();
+}
+
+function undoLast() {
+  if (snapshotTimer) { clearTimeout(snapshotTimer); snapshotTimer = null; snapshotNow(); }
+  let current = '';
+  try { current = JSON.stringify(getRows()); } catch (e) {}
+  while (undoStack.length && undoStack[undoStack.length - 1] === current) undoStack.pop();
+  if (!undoStack.length) { resetUndoBaseline(); return; }
+  const prev = JSON.parse(undoStack[undoStack.length - 1]);
+  isUndoing = true;
+  rebuildTableFromData(prev);
+  isUndoing = false;
+  updateUndoButton();
+  scheduleSave();
+}
+
+// Save all rows to Firestore (debounced 800ms)
+function scheduleSave() {
+  snapshotForUndo();                 // record state for the Undo button
+  saveLocal();                       // instant local backup on every change
+  if (!db) { setSyncBadge('offline', '✓ Saved locally'); return; }
+  clearTimeout(saveTimer);
+  setSyncBadge('saving', '↑ Saving…');
+  saveTimer = setTimeout(saveNow, 800);
+}
+
+// Write current rows to the browser as an immediate, can't-lose-it safety net.
+function saveLocal() {
+  if (!activeKey) return;
+  try {
+    const rows = getRows().map((r, i) => ({ ...r, _order: i }));
+    localStorage.setItem('gb_' + activeKey, JSON.stringify({ rows, updatedAt: Date.now() }));
+  } catch (e) {}
+}
+
+// Force-write pending changes right now (before switching record or closing the page).
+function flushSave() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  saveNow();
+}
+
+// Restore the active record from the local backup. Returns true if data was loaded.
+function loadLocalInto() {
+  if (!activeKey) return false;
+  try {
+    const raw = localStorage.getItem('gb_' + activeKey);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data.rows || !data.rows.length) return false;
+    rebuildTableFromData(data.rows);
+    return true;
+  } catch (e) { return false; }
+}
+
+function saveNow() {
+  saveLocal();                       // always keep the local backup current
+  if (!db || !activeKey) return;
+  lastSaveTime = Date.now();
+  const rows = getRows().map((r, i) => ({ ...r, _order: i }));
+  db.collection('billing').doc(activeKey).set({ rows, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
+    .then(() => setSyncBadge('synced', '✓ Synced'))
+    .catch(() => setSyncBadge('offline', '✗ Save failed — saved locally'));
+}
+
+// Subscribe to real-time updates for current grower+month
+function subscribeToDoc() {
+  activeKey = docKey();               // lock in the record we're now editing
+  lastSaveTime = 0;                  // allow the first snapshot of this record to load
+  if (!db) { if (!loadLocalInto()) { clearTableOnly(); addRows5(); resetUndoBaseline(); } return; }
+  if (unsubscribe) unsubscribe();
+  setSyncBadge('saving', '⟳ Loading…');
+  unsubscribe = db.collection('billing').doc(activeKey)
+    .onSnapshot(snap => {
+      // Skip if this is our own save echoing back (within 4 seconds)
+      if (Date.now() - lastSaveTime < 4000) {
+        setSyncBadge('synced', '✓ Synced');
+        return;
+      }
+      if (snap.exists && (snap.data().rows || []).length) {
+        rebuildTableFromData(snap.data().rows || []);
+      } else if (!loadLocalInto()) {
+        clearTableOnly();
+        addRows5();
+        resetUndoBaseline();
+      }
+      setSyncBadge('synced', '✓ Synced');
+    }, () => { setSyncBadge('offline', '✗ Offline — saved locally'); loadLocalInto(); });
+}
+
+function rebuildTableFromData(rows) {
+  isLoadingFromRemote = true;
+  clearTableOnly();
+  if (rows.length === 0) { addRows5(); isLoadingFromRemote = false; return; }
+  rows.sort((a, b) => (a._order || 0) - (b._order || 0));
+  rows.forEach(r => {
+    addRow(r.date || '', r.desc || '', '', r.qty || '', r.price || '', r.catVal || '', r.unit || 'AC', r.fields || []);
+    // check field boxes for the row we just added
+    const id = rowCount;
+    (r.fields || []).forEach(f => {
+      const panel = document.getElementById('fpanel-' + id);
+      if (!panel) return;
+      const cb = [...panel.querySelectorAll('input[type=checkbox]')].find(c => c.value === f);
+      if (cb) cb.checked = true;
+    });
+    if ((r.fields || []).length) {
+      const allFields = GROWERS[currentGrower].fields || {};
+      const isAll = (r.fields || []).length === Object.keys(allFields).length;
+      const trig = document.getElementById('ftrig-' + id);
+      if (trig) { trig.textContent = isAll ? 'All Fields' : r.fields.join(', '); trig.classList.add('has-val'); }
+      if (isAll) {                                  // tick the "All Fields" box on a fully-selected row
+        const panel = document.getElementById('fpanel-' + id);
+        const allBox = panel && [...panel.querySelectorAll('input[type=checkbox]')].find(c => c.value === '__ALL__');
+        if (allBox) allBox.checked = true;
+      }
+    }
+    if (r.catVal) {
+      const catSel = document.getElementById('cat-' + id);
+      if (catSel) catSel.value = r.catVal;
+    }
+    // Flag a saved qty that doesn't match the selected fields' acreage as a manual entry.
+    const qEl = document.getElementById('qty-' + id);
+    if (qEl && r.qty) {
+      const fmap = GROWERS[currentGrower].fields || {};
+      const autoTotal = (r.fields || []).reduce((s, f) => s + (fmap[f] || 0), 0);
+      qEl.dataset.manual = (Number(r.qty) !== autoTotal) ? 'true' : '';
+    }
+    // Refresh stale auto-descriptions (e.g. rows saved before "Field #" was added) and keep them
+    // auto-updatable, but preserve a genuinely custom note exactly as it was typed.
+    const dEl = document.getElementById('desc-' + id);
+    if (dEl) {
+      dEl.dataset.auto = buildDescription(id);
+      if (descIsAuto(id, r.desc || '')) { dEl.dataset.manual = ''; dEl.value = dEl.dataset.auto; }
+      else { dEl.dataset.manual = 'true'; }
+    }
+    if (r.unit) setUnit(id, r.unit);
+    calcRow(id);
+  });
+  updateSummary();
+  isLoadingFromRemote = false;
+  if (!isUndoing) resetUndoBaseline();
+}
+
+function clearTableOnly() {
+  document.getElementById('lineBody').innerHTML = '';
+  rowCount = 0;
+}
+
+// ── Grower data ─────────────────────────────────────────────────────────────
+const GROWERS = {
+  Tevelde: {
+    name: 'Tevelde',
+    fees: [
+      { label: 'Farm Management Service', acres: 1797, rate: 17, unit: 'ac' }
+    ],
+    fields: {
+      '1':98,'2':37,'3N':36,'3S':29,'4':99,'5':95,'6':98,'7':81,'8':79,
+      '9':84,'10':85,'11':57,'12':16,'13':37,'14':37,'15':9,'16':36,
+      '17':95,'18':81,'19':71,'20':160,
+      'R1':2,'R2':16,'R3':3,'R4':26,'R5':82,'R6':77,'R14':85,'R15':86
+    }
+  },
+  Hamstra: {
+    name: 'Hamstra',
+    fees: [
+      { label: 'Farm Management Service', acres: 1961, rate: 8,  unit: 'ac' },
+      { label: 'Tree Management',          acres: 218,  rate: 15, unit: 'ac' }
+    ],
+    fields: {
+      'Almonds':73,'Walnuts':145
+    }
+  }
+};
+
+// ── Category / price list ────────────────────────────────────────────────────
+const CATEGORIES = [
+  { code: '2D',  desc: 'Edge Spray',             price: 90,  unit: 'HR' },
+  { code: '2D',  desc: 'Edge Spray 2 guys',       price: 120, unit: 'HR' },
+  { code: '3',   desc: 'Tractor Work',            price: null, unit: '' },
+  { code: '3B',  desc: 'Borders',                 price: 130, unit: 'HR' },
+  { code: '3C',  desc: 'Chiseling',               price: 80,  unit: 'AC' },
+  { code: '3CH', desc: 'Circle Harrow',           price: 28,  unit: 'AC' },
+  { code: '3D',  desc: 'Discing',                 price: 36,  unit: 'AC' },
+  { code: '3DB', desc: 'Disc Bedding',            price: 30,  unit: 'AC' },
+  { code: '3DT', desc: 'Ditches',                 price: 130, unit: 'HR' },
+  { code: '3F',  desc: 'Fertilizing/Furrow Out',  price: 36,  unit: 'AC' },
+  { code: '3G',  desc: 'Graderboarding',          price: 21,  unit: 'AC' },
+  { code: '3GD', desc: 'Grain Drill',             price: 30,  unit: 'AC' },
+  { code: '3L',  desc: 'Listing',                 price: 30,  unit: 'AC' },
+  { code: '3LL', desc: 'Laser Leveling',          price: 210, unit: 'HR' },
+  { code: '3M',  desc: 'Mulching',                price: 33,  unit: 'HR' },
+  { code: '3P',  desc: 'Planting',                price: 31,  unit: 'HR' },
+  { code: '3R',  desc: 'Rolling',                 price: 20,  unit: 'AC' },
+  { code: '3S',  desc: 'Scraping',                price: 130, unit: 'HR' },
+  { code: '3T',  desc: 'Misc Tractor Work',       price: 130, unit: 'HR' },
+  { code: '3W',  desc: 'Wheelpacking',            price: 20,  unit: 'AC' },
+  { code: '4',   desc: 'Irrigation',              price: null, unit: '' },
+  { code: '6',   desc: 'Material Reimbursement',  price: null, unit: '' },
+];
+
+// Managers don't see pricing, so omit the $/unit suffix from the dropdown in manager mode.
+const SHOW_PRICES = !new URLSearchParams(window.location.search).has('manager');
+const catOptions = CATEGORIES.map(c =>
+  `<option value="${c.code}|${c.desc}">${c.code} – ${c.desc}${(c.price && SHOW_PRICES) ? ' ($'+c.price+'/'+c.unit+')' : ''}</option>`
+).join('');
+
+// ── State ────────────────────────────────────────────────────────────────────
+let currentGrower = 'Tevelde';
+let rowCount = 0;
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+const IS_MANAGER = new URLSearchParams(window.location.search).has('manager');
+
+function init() {
+  if (IS_MANAGER) {
+    document.body.classList.add('manager-mode');
+    document.getElementById('managerBanner').style.display = 'block';
+  }
+
+  // Set default month to current
+  const now = new Date();
+  document.getElementById('billingMonth').value =
+    now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+
+  // Build grower tabs
+  const tabsEl = document.getElementById('growerTabs');
+  Object.keys(GROWERS).forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'grower-tab' + (g === currentGrower ? ' active' : '');
+    btn.textContent = g;
+    btn.onclick = () => selectGrower(g);
+    tabsEl.appendChild(btn);
+  });
+
+  renderMgmtFees();
+  renderConfig();
+  updateSummary();
+  initFirebase();
+  subscribeToDoc();
+}
+
+function selectGrower(name) {
+  if (name === currentGrower) return;
+  flushSave();                       // save the current grower's entries before leaving
+  currentGrower = name;
+  document.querySelectorAll('.grower-tab').forEach((b,i) => {
+    b.classList.toggle('active', Object.keys(GROWERS)[i] === name);
+  });
+  renderMgmtFees();
+  renderConfig();
+  clearTableOnly();                  // subscribeToDoc reloads this grower's saved rows
+  updateSummary();
+  subscribeToDoc();
+}
+
+function refreshFieldDropdowns() {
+  document.querySelectorAll('#lineBody tr').forEach(tr => {
+    const id = tr.id.replace('row-', '');
+    const panel = document.getElementById('fpanel-' + id);
+    if (panel) panel.innerHTML = buildFieldCheckboxes(id);
+    // reset trigger
+    const trig = document.getElementById('ftrig-' + id);
+    if (trig) { trig.textContent = '— Select —'; trig.classList.remove('has-val'); }
+    document.getElementById('qty-' + id).value = '';
+    document.getElementById('desc-' + id).value = '';
+    calcRow(id);
+  });
+}
+
+function renderMgmtFees() {
+  const g = GROWERS[currentGrower];
+  document.getElementById('mgmtFeeDisplay').innerHTML = g.fees.map(f => `
+    <div class="mgmt-fee-item">
+      <label>${f.label}</label>
+      <span class="fee-display">${f.acres.toLocaleString()}${f.unit} @ $${f.rate}/${f.unit} = <strong>$${(f.acres * f.rate).toLocaleString()}</strong></span>
+    </div>
+  `).join('');
+}
+
+function renderConfig() {
+  const g = GROWERS[currentGrower];
+  const grid = document.getElementById('configGrid');
+  grid.innerHTML = g.fees.map((f, i) => `
+    <div class="config-field"><label>${f.label} – Acres</label>
+      <input type="number" value="${f.acres}" onchange="updateGrowerFee('${currentGrower}',${i},'acres',this.value)"></div>
+    <div class="config-field"><label>${f.label} – Rate ($/ac)</label>
+      <input type="number" value="${f.rate}" onchange="updateGrowerFee('${currentGrower}',${i},'rate',this.value)"></div>
+  `).join('');
+}
+
+function updateGrowerFee(grower, idx, field, val) {
+  GROWERS[grower].fees[idx][field] = parseFloat(val) || 0;
+  renderMgmtFees();
+  updateSummary();
+}
+
+function toggleConfig() {
+  document.getElementById('configPanel').classList.toggle('open');
+}
+
+// ── Line item rows ────────────────────────────────────────────────────────────
+function buildFieldCheckboxes(id) {
+  const fields = GROWERS[currentGrower].fields || {};
+  const totalAcres = Object.values(fields).reduce((s, a) => s + a, 0);
+  const allRow =
+    `<label style="border-bottom:1px solid #d0d0d0;font-weight:700;background:#f7fbf7;">
+      <input type="checkbox" value="__ALL__" onchange="toggleAllFields(${id}, this.checked)">
+      <span>All Fields</span><span class="acres-hint">${totalAcres} ac</span>
+    </label>`;
+  return allRow + Object.entries(fields).map(([f, a]) =>
+    `<label><input type="checkbox" value="${f}" onchange="applyField(${id})">
+      <span>${f}</span><span class="acres-hint">${a} ac</span>
+    </label>`
+  ).join('');
+}
+
+function priorMonthDefault() {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function addRow(date='', desc='', field='', qty='', price='', cat='', unit='', preFields=[]) {
+  rowCount++;
+  const id = rowCount;
+  const tbody = document.getElementById('lineBody');
+  const tr = document.createElement('tr');
+  tr.id = 'row-' + id;
+  tr.innerHTML = `
+    <td><input type="date" value="${date}" min="${priorMonthDefault().slice(0,7)}-01" onchange="updateSummary(); scheduleSave();"></td>
+    <td>
+      <div class="field-wrap" id="fw-${id}">
+        <button type="button" class="field-trigger" id="ftrig-${id}" onclick="toggleFieldPanel(${id})">— Select —</button>
+        <div class="field-panel" id="fpanel-${id}">
+          ${buildFieldCheckboxes(id)}
+        </div>
+      </div>
+    </td>
+    <td><select id="cat-${id}" onchange="applyCategory(${id})">
+      <option value="">— Select —</option>
+      ${catOptions}
+    </select></td>
+    <td><input type="text" placeholder="Auto-filled or type here" value="${desc}" id="desc-${id}" oninput="descEdited(${id})" onchange="updateSummary()"></td>
+    <td>
+      <div class="unit-toggle">
+        <input type="number" step="0.01" placeholder="0" value="${qty}" id="qty-${id}" onchange="qtyEdited(${id})">
+        <button class="unit-btn" id="unit-${id}" onclick="toggleUnit(${id})" title="Toggle Acres / Hours">AC</button>
+      </div>
+    </td>
+    <td class="col-price"><input type="number" step="0.01" placeholder="0.00" value="${price}" id="price-${id}" onchange="calcRow(${id})"></td>
+    <td class="total-cell col-total" id="total-${id}">—</td>
+    <td><button class="delete-btn" onclick="deleteRow(${id})">✕</button></td>
+  `;
+  tbody.appendChild(tr);
+  if (field) document.getElementById('field-'+id).value = field;
+  if (unit) setUnit(id, unit);
+  if (cat) {
+    document.getElementById('cat-'+id).value = cat;
+    applyCategory(id, false);
+  }
+  if (qty && price) calcRow(id);
+}
+
+function getSelectedFields(id) {
+  const panel = document.getElementById('fpanel-' + id);
+  if (!panel) return [];
+  return [...panel.querySelectorAll('input[type=checkbox]:checked')]
+    .map(c => c.value).filter(v => v !== '__ALL__');
+}
+
+// Mark the Acres/Hours box as manually edited so field changes never wipe it out.
+function qtyEdited(id) {
+  const q = document.getElementById('qty-' + id);
+  if (q) q.dataset.manual = q.value !== '' ? 'true' : '';
+  calcRow(id);
+}
+
+// Auto-fill the qty only when the user hasn't typed their own value. Returns true if applied.
+function setAutoQty(id, val) {
+  const q = document.getElementById('qty-' + id);
+  if (!q) return false;
+  if (q.dataset.manual === 'true' && q.value !== '') return false;
+  q.value = val;
+  q.dataset.manual = '';
+  return true;
+}
+
+function descEdited(id) {
+  const el = document.getElementById('desc-' + id);
+  // Only treat it as a manual edit if the text differs from the auto-generated description,
+  // so choosing a field/category always keeps the "Field #" prefix up to date.
+  el.dataset.manual = (el.value && el.value !== el.dataset.auto) ? 'true' : '';
+  scheduleSave();
+}
+
+function setAutoDesc(id, text) {
+  const el = document.getElementById('desc-' + id);
+  if (!el) return;
+  el.dataset.auto = text;                       // remember the latest auto description
+  if (el.dataset.manual === 'true') return;     // don't clobber a genuinely custom note
+  el.value = text;
+}
+
+function buildDescription(id) {
+  const fields = getSelectedFields(id);
+  const catVal  = document.getElementById('cat-' + id)?.value || '';
+  const catDesc = catVal ? catVal.split('|')[1] : '';
+  const allFields = GROWERS[currentGrower].fields || {};
+  const isAll = fields.length > 0 && fields.length === Object.keys(allFields).length;
+  const fieldPart = isAll ? '' : (fields.length ? 'Field ' + fields.join(', ') : '');  // "All Fields" is not written into the description
+  const parts = [fieldPart, catDesc].filter(Boolean);
+  return parts.join(' – ');
+}
+
+// A saved description is "auto" (safe to refresh) if it's blank, matches the generated text,
+// or is just the category name optionally prefixed by a field list. Anything else is a custom note.
+function descIsAuto(id, saved) {
+  if (!saved) return true;
+  if (saved === buildDescription(id)) return true;
+  const catVal = document.getElementById('cat-' + id)?.value || '';
+  const catDesc = catVal ? catVal.split('|')[1] : '';
+  if (catDesc && saved.endsWith(catDesc)) {
+    const prefix = saved.slice(0, saved.length - catDesc.length).replace(/\s*[–-]\s*$/, '').trim();
+    if (prefix === '' || prefix === 'All Fields' || /^Field .+$/.test(prefix)) return true;
+  }
+  return false;
+}
+
+function toggleFieldPanel(id) {
+  const panel = document.getElementById('fpanel-' + id);
+  const isOpen = panel.classList.contains('open');
+  // close all others
+  document.querySelectorAll('.field-panel.open').forEach(p => p.classList.remove('open'));
+  if (!isOpen) panel.classList.add('open');
+}
+
+// Check or uncheck every field when the "All Fields" box is toggled.
+function toggleAllFields(id, checked) {
+  const panel = document.getElementById('fpanel-' + id);
+  if (!panel) return;
+  panel.querySelectorAll('input[type=checkbox]').forEach(c => {
+    if (c.value !== '__ALL__') c.checked = checked;
+  });
+  applyField(id);
+}
+
+function applyField(id) {
+  const panel = document.getElementById('fpanel-' + id);
+  const fields = GROWERS[currentGrower].fields || {};
+  const checked = getSelectedFields(id);              // excludes the "All Fields" box
+  const isAll = checked.length > 0 && checked.length === Object.keys(fields).length;
+
+  // Keep the "All Fields" box in sync with the individual selections.
+  const allBox = [...panel.querySelectorAll('input[type=checkbox]')].find(c => c.value === '__ALL__');
+  if (allBox) allBox.checked = isAll;
+
+  const totalAcres = checked.reduce((s, f) => s + (fields[f] || 0), 0);
+  const trig = document.getElementById('ftrig-' + id);
+  if (checked.length === 0) {
+    trig.textContent = '— Select —';
+    trig.classList.remove('has-val');
+    setAutoQty(id, '');
+    calcRow(id);
+  } else if (isAll) {
+    // "All Fields" selected — leave Acres/Hours for manual entry, keeping any typed value.
+    trig.textContent = 'All Fields';
+    trig.classList.add('has-val');
+    setAutoQty(id, '');
+    calcRow(id);
+  } else {
+    trig.textContent = checked.join(', ');
+    trig.classList.add('has-val');
+    if (setAutoQty(id, totalAcres)) setUnit(id, 'AC');
+    calcRow(id);
+  }
+  setAutoDesc(id, buildDescription(id));
+  updateSummary();
+  scheduleSave();
+}
+
+function toggleUnit(id) {
+  const btn = document.getElementById('unit-' + id);
+  const current = btn.textContent.trim();
+  setUnit(id, current === 'AC' ? 'HR' : 'AC');
+  scheduleSave();
+}
+
+function setUnit(id, unit) {
+  const btn = document.getElementById('unit-' + id);
+  if (!btn) return;
+  btn.textContent = unit;
+  btn.className = 'unit-btn ' + unit.toLowerCase();
+}
+
+function addRows5() { for(let i=0;i<5;i++) addRow(); }
+
+function deleteRow(id) {
+  document.getElementById('row-' + id)?.remove();
+  updateSummary();
+  scheduleSave();
+}
+
+function applyCategory(id, overwritePrice=true) {
+  const sel = document.getElementById('cat-' + id);
+  const val = sel.value;
+  if (!val) return;
+  const [code, descPart] = val.split('|');
+  const cat = CATEGORIES.find(c => c.code === code && c.desc === descPart);
+  if (cat) {
+    if (cat.price && overwritePrice) {
+      document.getElementById('price-' + id).value = cat.price;
+    }
+    if (cat.unit) setUnit(id, cat.unit);
+  }
+  setAutoDesc(id, buildDescription(id));
+  calcRow(id);
+}
+
+function calcRow(id) {
+  const qty = parseFloat(document.getElementById('qty-' + id)?.value) || 0;
+  const price = parseFloat(document.getElementById('price-' + id)?.value) || 0;
+  const total = qty * price;
+  const el = document.getElementById('total-' + id);
+  if (el) el.textContent = total > 0 ? '$' + total.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+  updateSummary();
+  if (!isLoadingFromRemote) scheduleSave();
+}
+
+function getRows() {
+  const rows = [];
+  document.querySelectorAll('#lineBody tr').forEach(tr => {
+    const id = tr.id.replace('row-', '');
+    const date   = tr.querySelector('input[type=date]')?.value || '';
+    const fields = getSelectedFields(id);
+    const allCount = Object.keys(GROWERS[currentGrower].fields || {}).length;
+    const field  = (fields.length > 0 && fields.length === allCount) ? 'All Fields' : fields.join(', ');
+    const catVal = document.getElementById('cat-' + id)?.value || '';
+    const desc  = document.getElementById('desc-' + id)?.value || '';
+    const qty   = parseFloat(document.getElementById('qty-' + id)?.value) || 0;
+    const price = parseFloat(tr.querySelectorAll('input[type=number]')[1]?.value) || 0;
+    const unit  = document.getElementById('unit-' + id)?.textContent.trim() || 'AC';
+    const [catCode='', catDesc=''] = catVal.split('|');
+    const total = qty * price;
+    rows.push({ date, fields, field, catVal, desc, qty, price, unit, catCode, catDesc, total });
+  });
+  return rows;
+}
+
+function clearEntries() {
+  if (!confirm('Clear all line item entries?')) return;
+  document.getElementById('lineBody').innerHTML = '';
+  rowCount = 0;
+  addRows5();
+  updateSummary();
+  scheduleSave();                    // persist the clear (and make it undoable)
+}
+
+// ── Summary ───────────────────────────────────────────────────────────────────
+function updateSummary() {
+  const g = GROWERS[currentGrower];
+  const mgmtTotal = g.fees.reduce((s,f) => s + f.acres * f.rate, 0);
+  const rows = getRows();
+  const workTotal = rows.reduce((s,r) => s + r.total, 0);
+  const grandTotal = mgmtTotal + workTotal;
+
+  const fmt = n => '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  let html = g.fees.map(f =>
+    `<div class="line"><span>${f.label} (${f.acres.toLocaleString()}ac @ $${f.rate}/ac)</span><span>${fmt(f.acres*f.rate)}</span></div>`
+  ).join('');
+  html += `<div class="line"><span>Work Entries Total</span><span>${fmt(workTotal)}</span></div>`;
+  html += `<div class="line"><span>Grand Total</span><span>${fmt(grandTotal)}</span></div>`;
+
+  document.getElementById('summaryBox').innerHTML = html;
+}
+
+// ── Excel Export ──────────────────────────────────────────────────────────────
+function exportExcel() {
+  const g = GROWERS[currentGrower];
+  const monthVal = document.getElementById('billingMonth').value;
+  const monthLabel = monthVal
+    ? new Date(monthVal + '-02').toLocaleString('en-US', {month:'long', year:'numeric'})
+    : '';
+  const rows = getRows().filter(r => r.total > 0 || r.desc);
+  const mgmtTotal = g.fees.reduce((s,f) => s + f.acres * f.rate, 0);
+  const workTotal = rows.reduce((s,r) => s + r.total, 0);
+  const grandTotal = mgmtTotal + workTotal;
+  const fmt = n => n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Mgmt Sheet ──────────────────────────────────────────────────────────────
+  const mgmtData = [
+    ['Monthly Billing'],
+    ['Grower:', '', g.name],
+    ['Month:', '', monthLabel],
+  ];
+  g.fees.forEach(f => {
+    mgmtData.push(['', f.label + ':', `${f.acres.toLocaleString()}ac @ $${f.rate}/ac`, f.acres * f.rate]);
+  });
+  if (rows.length > 0) {
+    mgmtData.push(['', 'Work Charges:', '', workTotal]);
+  }
+  mgmtData.push([]);
+  mgmtData.push(['', '', 'TOTAL DUE:', grandTotal]);
+
+  const mgmtWs = XLSX.utils.aoa_to_sheet(mgmtData);
+  mgmtWs['!cols'] = [{wch:30},{wch:30},{wch:30},{wch:15}];
+  XLSX.utils.book_append_sheet(wb, mgmtWs, g.name + ' Mgmt');
+
+  // ── Data Sheet ──────────────────────────────────────────────────────────────
+  const dataRows = [
+    [g.name.toUpperCase() + ' – ' + monthLabel],
+    ['Date', 'Field #', 'Category', 'Description', 'Qty', 'AC/HR', 'Price', 'Total'],
+  ];
+  rows.forEach(r => {
+    dataRows.push([r.date, r.field, r.catCode ? `${r.catCode} – ${r.catDesc}` : '', r.desc, r.qty||'', r.unit, r.price||'', r.total||'']);
+  });
+  dataRows.push([]);
+  dataRows.push(['', '', '', '', 'Work Total', workTotal]);
+
+  const dataWs = XLSX.utils.aoa_to_sheet(dataRows);
+  dataWs['!cols'] = [{wch:12},{wch:8},{wch:32},{wch:8},{wch:7},{wch:10},{wch:28},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, dataWs, g.name);
+
+  const filename = `${g.name} ${monthLabel || 'Draft'}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+// ── PDF Export ────────────────────────────────────────────────────────────────
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+
+  const g = GROWERS[currentGrower];
+  const monthVal = document.getElementById('billingMonth').value;
+  const monthLabel = monthVal
+    ? new Date(monthVal + '-02').toLocaleString('en-US', { month: 'long', year: 'numeric' })
+    : 'Draft';
+  const rows = getRows().filter(r => r.total > 0 || r.desc);
+  const mgmtTotal = g.fees.reduce((s, f) => s + f.acres * f.rate, 0);
+  const workTotal = rows.reduce((s, r) => s + r.total, 0);
+  const grandTotal = mgmtTotal + workTotal;
+
+  const W = 612, margin = 48;
+  const green = [26, 92, 42];
+  const lightGreen = [240, 255, 244];
+  const darkText = [30, 30, 30];
+  const fmt = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  let y = margin;
+
+  // ── Header bar ──────────────────────────────────────────────────────────────
+  doc.setFillColor(...green);
+  doc.rect(0, 0, W, 64, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(255, 255, 255);
+  doc.text('MONTHLY BILLING', margin, 38);
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Correia Custom Farming Inc.', margin, 54);
+
+  y = 88;
+
+  // ── Grower / Month info box ──────────────────────────────────────────────────
+  doc.setFillColor(...lightGreen);
+  doc.roundedRect(margin, y, W - margin * 2, 44, 4, 4, 'F');
+  doc.setDrawColor(...green);
+  doc.setLineWidth(1);
+  doc.roundedRect(margin, y, W - margin * 2, 44, 4, 4, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(...green);
+  doc.text(g.name.toUpperCase(), margin + 14, y + 17);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(...darkText);
+  doc.text('Billing Period:', margin + 14, y + 33);
+  doc.setFont('helvetica', 'bold');
+  doc.text(monthLabel, margin + 88, y + 33);
+
+  // Right side: date generated
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Generated: ' + new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), W - margin - 2, y + 33, { align: 'right' });
+
+  y += 60;
+
+  // ── Management Fees section ──────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...green);
+  doc.text('MANAGEMENT FEES', margin, y);
+  doc.setDrawColor(...green);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y + 3, W - margin, y + 3);
+  y += 14;
+
+  g.fees.forEach(f => {
+    const amt = f.acres * f.rate;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(...darkText);
+    doc.text(f.label, margin + 8, y);
+    doc.text(`${f.acres.toLocaleString()} ac @ $${f.rate}/ac`, margin + 200, y);
+    doc.setFont('helvetica', 'bold');
+    doc.text(fmt(amt), W - margin, y, { align: 'right' });
+    y += 16;
+  });
+
+  y += 8;
+
+  // ── Work Entries table ───────────────────────────────────────────────────────
+  if (rows.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...green);
+    doc.text('WORK ENTRIES', margin, y);
+    doc.setDrawColor(...green);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y + 3, W - margin, y + 3);
+    y += 10;
+
+    const tableRows = rows.map(r => [
+      r.date || '—',
+      r.field || '—',
+      r.catCode ? `${r.catCode} – ${r.catDesc}` : '—',
+      r.desc || '—',
+      r.qty ? r.qty + ' ' + r.unit : '—',
+      r.price ? fmt(r.price) : '—',
+      r.total ? fmt(r.total) : '—'
+    ]);
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [['Date', 'Field', 'Category', 'Description', 'Qty', 'Price', 'Total']],
+      body: tableRows,
+      styles: {
+        font: 'helvetica', fontSize: 8.5, cellPadding: 4,
+        textColor: darkText, lineColor: [220, 220, 220], lineWidth: 0.3
+      },
+      headStyles: {
+        fillColor: green, textColor: [255, 255, 255],
+        fontStyle: 'bold', fontSize: 8.5
+      },
+      alternateRowStyles: { fillColor: [248, 253, 249] },
+      columnStyles: {
+        0: { cellWidth: 58 },
+        1: { cellWidth: 38 },
+        2: { cellWidth: 110 },
+        3: { cellWidth: 'auto' },
+        4: { cellWidth: 52, halign: 'center' },
+        5: { cellWidth: 52, halign: 'right' },
+        6: { cellWidth: 60, halign: 'right', fontStyle: 'bold' }
+      },
+      didDrawPage: () => {}
+    });
+
+    y = doc.lastAutoTable.finalY + 10;
+  }
+
+  // ── Totals box ───────────────────────────────────────────────────────────────
+  const boxH = rows.length > 0 ? 70 : 40;
+  const boxX = W / 2 + 20;
+  const boxW = W - margin - boxX;
+
+  doc.setFillColor(245, 250, 246);
+  doc.setDrawColor(...green);
+  doc.setLineWidth(0.8);
+  doc.roundedRect(boxX, y, boxW, boxH, 4, 4, 'FD');
+
+  let ty = y + 16;
+  doc.setFontSize(9.5);
+
+  g.fees.forEach(f => {
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...darkText);
+    doc.text(f.label, boxX + 8, ty);
+    doc.text(fmt(f.acres * f.rate), boxX + boxW - 8, ty, { align: 'right' });
+    ty += 14;
+  });
+
+  if (rows.length > 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.text('Work Charges', boxX + 8, ty);
+    doc.text(fmt(workTotal), boxX + boxW - 8, ty, { align: 'right' });
+    ty += 2;
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.3);
+    doc.line(boxX + 8, ty + 2, boxX + boxW - 8, ty + 2);
+    ty += 10;
+  }
+
+  doc.setFillColor(...green);
+  doc.roundedRect(boxX, ty - 4, boxW, 22, 3, 3, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(255, 255, 255);
+  doc.text('TOTAL DUE', boxX + 10, ty + 11);
+  doc.text(fmt(grandTotal), boxX + boxW - 8, ty + 11, { align: 'right' });
+
+  // ── Footer ───────────────────────────────────────────────────────────────────
+  const pageH = 792;
+  doc.setFillColor(...green);
+  doc.rect(0, pageH - 28, W, 28, 'F');
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(255, 255, 255);
+  doc.text('Correia Custom Farming Inc.  •  Monthly Billing Statement', W / 2, pageH - 11, { align: 'center' });
+
+  const filename = `${g.name} ${monthLabel === 'Draft' ? 'Draft' : monthLabel}.pdf`;
+  doc.save(filename);
+}
+
+// ── Close field panels on outside click ──────────────────────────────────────
+document.addEventListener('click', e => {
+  if (!e.target.closest('.field-wrap')) {
+    document.querySelectorAll('.field-panel.open').forEach(p => p.classList.remove('open'));
+  }
+});
+
+// ── Month input listener ──────────────────────────────────────────────────────
+document.getElementById('billingMonth').addEventListener('change', () => {
+  flushSave();                       // save the month we're leaving
+  clearTableOnly();
+  updateSummary();
+  subscribeToDoc();                  // load the newly selected month
+});
+
+// Never lose the last keystrokes: flush pending saves when the page is hidden or closed.
+window.addEventListener('beforeunload', flushSave);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushSave();
+});
+
+init();
+// v2 — undo, All Fields on exports, friendly filenames, sticky acres/hours
+</script>
+</body>
+</html>
