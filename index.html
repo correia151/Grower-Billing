@@ -175,7 +175,7 @@
 
 </div>
 
-<footer>Grower Billing App &mdash; entries sync to the cloud and back up on this device &middot; <a href="recovery.html" style="color:#1a5c2a;">Data recovery</a></footer>
+<footer>Grower Billing App &mdash; entries sync to the cloud and back up on this device &middot; <a href="history.html" style="color:#1a5c2a;">Backup history</a> &middot; <a href="recovery.html" style="color:#1a5c2a;">Device recovery</a></footer>
 
 <script>
 // ── Firebase Configuration ────────────────────────────────────────────────────
@@ -352,12 +352,12 @@ function saveNow() {
   db.collection('billing').doc(activeKey).set({ rows, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
     .then(() => setSyncBadge('synced', '✓ Synced'))
     .catch(() => setSyncBadge('offline', '✗ Save failed — saved locally'));
-  // Safety net: keep an hourly history snapshot of every record that has real entries,
-  // so accidental overwrites can always be recovered.
+  // Safety net: keep a minute-by-minute history snapshot of every record that has
+  // real entries, so any state can be restored from the History page on any computer.
   if (rows.some(r => !isRowEmpty(r))) {
-    const stamp = new Date().toISOString().slice(0, 13).replace('T', '_');
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', '_');
     db.collection('billing_history').doc(activeKey + '__' + stamp)
-      .set({ rows, savedAt: firebase.firestore.FieldValue.serverTimestamp() })
+      .set({ key: activeKey, rows, savedAt: firebase.firestore.FieldValue.serverTimestamp() })
       .catch(() => {});
   }
 }
@@ -1179,8 +1179,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 init();
-// v4 — data-loss protection: no saves before a record loads, viewers never write,
-//      blank tables can't overwrite real entries, hourly history snapshots
+// v5 — minute-level history snapshots with History page for browsing/restoring backups
 </script>
 </body>
 </html>

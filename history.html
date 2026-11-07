@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Billing Backup History</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f0f2f5; color: #222; }
+  header { background: #1a5c2a; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 1.2rem; font-weight: 600; }
+  header a { color: #cde9d4; font-size: 0.85rem; }
+  .container { max-width: 1000px; margin: 24px auto; padding: 0 16px; }
+  .card { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 1rem; font-weight: 600; color: #1a5c2a; margin-bottom: 10px; }
+  .intro { font-size: 0.9rem; line-height: 1.5; color: #444; }
+  .loading { color: #888; font-size: 0.9rem; }
+  .key-head { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+  .key-head h2 { margin-bottom: 0; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 0.75rem; font-weight: 700; background: #e8f5e9; color: #1a5c2a; }
+  .snaps { display: none; margin-top: 12px; }
+  .snaps.open { display: block; }
+  .snap-row { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid #eee; font-size: 0.88rem; flex-wrap: wrap; }
+  .snap-time { min-width: 180px; font-weight: 600; color: #333; }
+  .btn { padding: 6px 14px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.8rem; font-weight: 600; }
+  .btn-view { background: white; border: 2px solid #1a5c2a; color: #1a5c2a; }
+  .btn-restore { background: #1a5c2a; color: white; }
+  .btn-dl { background: white; border: 2px solid #888; color: #555; }
+  .preview { width: 100%; margin: 8px 0; }
+  .preview .meta { font-size: 0.85rem; color: #555; margin-bottom: 6px; }
+  .preview .meta b { color: #1a5c2a; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  th { background: #1a5c2a; color: white; padding: 5px 8px; text-align: left; }
+  td { padding: 4px 8px; border-bottom: 1px solid #eee; }
+  .status { font-size: 0.85rem; font-weight: 700; padding: 6px 0; width: 100%; }
+  .status.ok { color: #1a5c2a; }
+  .status.err { color: #c0392b; }
+  .empty-note { color: #888; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🕘 Grower Billing — Backup History</h1>
+  <a href="index.html">← Back to the billing app</a>
+</header>
+<div class="container">
+  <div class="card">
+    <h2>Every saved version, from any computer</h2>
+    <p class="intro">
+      The app saves a snapshot to the cloud for every minute in which entries were added or changed.
+      Pick a grower &amp; month below, open a snapshot to see exactly what the table held at that moment,
+      and click <b>Restore</b> to make it the live record again. Snapshots are never deleted
+      and a blank table never creates one, so there is always a good version to go back to.
+    </p>
+  </div>
+  <div id="list" class="loading">Loading history…</div>
+</div>
+<script>
+const PROJECT = 'grower-billing';
+const API_KEY = 'AIzaSyAofzj9hQFg-wHMLLY9014MLcSjVgAefNg';
+const DOCS = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/`;
+
+function isEmptyRow(r) {
+  return !(r.desc || Number(r.qty) || Number(r.price) || r.date || r.catVal || (r.fields && r.fields.length));
+}
+function fmt(n) { return '$' + Number(n||0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+function toFs(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toFs) } };
+  if (typeof v === 'object') { const f = {}; for (const k in v) f[k] = toFs(v[k]); return { mapValue: { fields: f } }; }
+  return { stringValue: String(v) };
+}
+function fromFs(v) {
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromFs);
+  if ('mapValue' in v) { const o = {}; const f = v.mapValue.fields || {}; for (const k in f) o[k] = fromFs(f[k]); return o; }
+  if ('timestampValue' in v) return v.timestampValue;
+  return null;
+}
+
+async function listHistory() {
+  const snaps = [];
+  let pageToken = '';
+  do {
+    const url = DOCS + 'billing_history?key=' + API_KEY + '&pageSize=300&mask.fieldPaths=savedAt' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    (d.documents || []).forEach(doc => {
+      const id = doc.name.split('/').pop();
+      const sep = id.lastIndexOf('__');
+      if (sep < 1) return;
+      snaps.push({
+        id,
+        key: id.slice(0, sep),
+        savedAt: doc.fields?.savedAt?.timestampValue || doc.updateTime
+      });
+    });
+    pageToken = d.nextPageToken || '';
+  } while (pageToken);
+  return snaps;
+}
+
+const cache = {};
+async function getSnapshot(id) {
+  if (cache[id]) return cache[id];
+  const res = await fetch(DOCS + 'billing_history/' + encodeURIComponent(id) + '?key=' + API_KEY);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const d = await res.json();
+  cache[id] = { rows: fromFs(d.fields.rows) };
+  return cache[id];
+}
+
+function rowTable(rows) {
+  const r = rows.filter(x => !isEmptyRow(x));
+  if (!r.length) return '<p class="empty-note">No entries.</p>';
+  return `<table><tr><th>Date</th><th>Field</th><th>Category</th><th>Description</th><th>Qty</th><th>Price</th><th>Total</th></tr>` +
+    r.map(x => `<tr><td>${esc(x.date||'')}</td><td>${esc(x.field||'')}</td><td>${x.catCode?esc(x.catCode)+' – '+esc(x.catDesc||''):''}</td><td>${esc(x.desc||'')}</td><td>${x.qty||''} ${esc(x.unit||'')}</td><td>${x.price?fmt(x.price):''}</td><td>${x.total?fmt(x.total):''}</td></tr>`).join('') + '</table>';
+}
+
+async function view(id, btn) {
+  const holder = document.getElementById('prev-' + id);
+  if (holder.innerHTML) { holder.innerHTML = ''; btn.textContent = 'View'; return; }
+  btn.textContent = '…';
+  try {
+    const { rows } = await getSnapshot(id);
+    const n = rows.filter(r => !isEmptyRow(r)).length;
+    const total = rows.reduce((s, r) => s + (Number(r.total) || 0), 0);
+    holder.innerHTML = `<div class="meta"><b>${n}</b> entries, work total <b>${fmt(total)}</b></div>` + rowTable(rows);
+    btn.textContent = 'Hide';
+  } catch (e) { holder.innerHTML = '<span class="status err">Could not load: ' + esc(e) + '</span>'; btn.textContent = 'View'; }
+}
+
+async function restore(id, key) {
+  let rows;
+  try { rows = (await getSnapshot(id)).rows; }
+  catch (e) { alert('Could not load that snapshot: ' + e); return; }
+  const n = rows.filter(r => !isEmptyRow(r)).length;
+  if (!confirm(`Restore this snapshot (${n} entries) as the live record for "${key}"?\n\nThis replaces what the app currently shows for that month. A snapshot of today's state stays in this history, so you can always come back.`)) return;
+  const el = document.getElementById('st-' + id);
+  el.className = 'status'; el.textContent = 'Restoring…';
+  try {
+    const body = JSON.stringify({ fields: {
+      rows: toFs(rows.map((r, i) => ({ ...r, _order: r._order !== undefined ? r._order : i }))),
+      updatedAt: { timestampValue: new Date().toISOString() },
+      restoredFromHistory: { stringValue: id }
+    }});
+    const res = await fetch(DOCS + 'billing/' + encodeURIComponent(key) + '?key=' + API_KEY, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (await res.text()).slice(0, 200));
+    el.className = 'status ok';
+    el.textContent = '✓ Restored. Open or reload the billing app and this month will show these entries.';
+  } catch (e) {
+    el.className = 'status err';
+    el.textContent = '✗ Restore failed: ' + e;
+  }
+}
+
+async function download(id) {
+  try {
+    const { rows } = await getSnapshot(id);
+    const blob = new Blob([JSON.stringify({ snapshot: id, rows }, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'backup_' + id.replace(/:/g, '-') + '.json';
+    a.click();
+  } catch (e) { alert('Could not load that snapshot: ' + e); }
+}
+
+async function init() {
+  const listEl = document.getElementById('list');
+  let snaps;
+  try { snaps = await listHistory(); }
+  catch (e) { listEl.innerHTML = '<div class="card"><p class="intro">Could not reach the backup history: ' + esc(e) + '</p></div>'; return; }
+  listEl.classList.remove('loading');
+  if (!snaps.length) {
+    listEl.innerHTML = '<div class="card"><h2>No snapshots yet</h2><p class="intro">History starts building the next time entries are added or changed in the app. Make one entry and a snapshot will appear here within a minute.</p></div>';
+    return;
+  }
+  const byKey = {};
+  snaps.forEach(s => (byKey[s.key] = byKey[s.key] || []).push(s));
+  const keys = Object.keys(byKey).sort((a, b) => {
+    const la = byKey[a].map(x => x.savedAt).sort().pop();
+    const lb = byKey[b].map(x => x.savedAt).sort().pop();
+    return lb < la ? -1 : 1;
+  });
+  listEl.innerHTML = keys.map((k, i) => {
+    const items = byKey[k].sort((a, b) => (b.savedAt || '') < (a.savedAt || '') ? -1 : 1);
+    const rows = items.map(s => `
+      <div class="snap-row">
+        <span class="snap-time">${s.savedAt ? new Date(s.savedAt).toLocaleString() : s.id.slice(s.key.length + 2)}</span>
+        <button class="btn btn-view" onclick="view('${s.id}', this)">View</button>
+        <button class="btn btn-restore" onclick="restore('${s.id}', '${s.key}')">Restore</button>
+        <button class="btn btn-dl" onclick="download('${s.id}')">Download</button>
+        <div class="preview" id="prev-${s.id}"></div>
+        <div class="status" id="st-${s.id}"></div>
+      </div>`).join('');
+    return `<div class="card">
+      <div class="key-head" onclick="this.parentNode.querySelector('.snaps').classList.toggle('open')">
+        <h2>${esc(k)}</h2><span class="pill">${items.length} snapshot${items.length === 1 ? '' : 's'}</span>
+      </div>
+      <div class="snaps${i === 0 ? ' open' : ''}">${rows}</div>
+    </div>`;
+  }).join('');
+}
+init();
+</script>
+</body>
+</html>
