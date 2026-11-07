@@ -196,6 +196,27 @@ let saveTimer = null;
 let isLoadingFromRemote = false;
 let lastSaveTime = 0;
 let activeKey = null;       // the grower_month record currently loaded & being edited
+let recordLoaded = false;   // true once the active record finished loading (cloud, local backup, or new)
+let hadDataAfterLoad = false; // the active record has shown real entries this session
+let allowBlankSave = false; // the user deliberately emptied the table (Clear Entries / deletes / undo)
+let dirty = false;          // there are unsaved user changes
+
+function isRowEmpty(r) {
+  return !(r.desc || Number(r.qty) || Number(r.price) || r.date || r.catVal || (r.fields && r.fields.length));
+}
+
+// A blank table must never silently overwrite a record that had entries,
+// unless the user deliberately emptied it. Blocks the save when true.
+function blankSaveBlocked(rows) {
+  const hasData = rows.some(r => !isRowEmpty(r));
+  if (hasData) { hadDataAfterLoad = true; return false; }
+  return hadDataAfterLoad && !allowBlankSave;
+}
+
+// After a deliberate destructive action, allow saving an all-blank table.
+function markDeliberateEmpty() {
+  try { if (getRows().every(isRowEmpty)) allowBlankSave = true; } catch (e) {}
+}
 
 function firebaseConfigured() {
   return !FIREBASE_CONFIG.apiKey.startsWith('PASTE');
@@ -267,12 +288,16 @@ function undoLast() {
   isUndoing = true;
   rebuildTableFromData(prev);
   isUndoing = false;
+  markDeliberateEmpty();
   updateUndoButton();
   scheduleSave();
 }
 
 // Save all rows to Firestore (debounced 800ms)
 function scheduleSave() {
+  if (isLoadingFromRemote) return;   // rebuilding the table is not a user edit
+  if (!recordLoaded) return;         // never save over a record that hasn't finished loading
+  dirty = true;
   snapshotForUndo();                 // record state for the Undo button
   saveLocal();                       // instant local backup on every change
   if (!db) { setSyncBadge('offline', '✓ Saved locally'); return; }
@@ -283,47 +308,73 @@ function scheduleSave() {
 
 // Write current rows to the browser as an immediate, can't-lose-it safety net.
 function saveLocal() {
-  if (!activeKey) return;
+  if (!activeKey || !recordLoaded) return;
   try {
     const rows = getRows().map((r, i) => ({ ...r, _order: i }));
+    if (blankSaveBlocked(rows)) return;
     localStorage.setItem('gb_' + activeKey, JSON.stringify({ rows, updatedAt: Date.now() }));
   } catch (e) {}
 }
 
 // Force-write pending changes right now (before switching record or closing the page).
+// Only writes when the user actually changed something — viewing never writes.
 function flushSave() {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  if (!dirty) return;
   saveNow();
 }
 
-// Restore the active record from the local backup. Returns true if data was loaded.
+// Restore the active record from the local backup. Returns true if real data was loaded.
 function loadLocalInto() {
   if (!activeKey) return false;
   try {
     const raw = localStorage.getItem('gb_' + activeKey);
     if (!raw) return false;
     const data = JSON.parse(raw);
-    if (!data.rows || !data.rows.length) return false;
+    if (!data.rows || !data.rows.some(r => !isRowEmpty(r))) return false;
     rebuildTableFromData(data.rows);
     return true;
   } catch (e) { return false; }
 }
 
 function saveNow() {
+  if (!recordLoaded || !activeKey) return;
   saveLocal();                       // always keep the local backup current
-  if (!db || !activeKey) return;
-  lastSaveTime = Date.now();
+  if (!db) { dirty = false; return; }
   const rows = getRows().map((r, i) => ({ ...r, _order: i }));
+  if (blankSaveBlocked(rows)) {
+    setSyncBadge('offline', '⚠ Empty table — not saved');
+    dirty = false;
+    return;
+  }
+  dirty = false;
+  lastSaveTime = Date.now();
   db.collection('billing').doc(activeKey).set({ rows, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
     .then(() => setSyncBadge('synced', '✓ Synced'))
     .catch(() => setSyncBadge('offline', '✗ Save failed — saved locally'));
+  // Safety net: keep an hourly history snapshot of every record that has real entries,
+  // so accidental overwrites can always be recovered.
+  if (rows.some(r => !isRowEmpty(r))) {
+    const stamp = new Date().toISOString().slice(0, 13).replace('T', '_');
+    db.collection('billing_history').doc(activeKey + '__' + stamp)
+      .set({ rows, savedAt: firebase.firestore.FieldValue.serverTimestamp() })
+      .catch(() => {});
+  }
 }
 
 // Subscribe to real-time updates for current grower+month
 function subscribeToDoc() {
   activeKey = docKey();               // lock in the record we're now editing
   lastSaveTime = 0;                  // allow the first snapshot of this record to load
-  if (!db) { if (!loadLocalInto()) { clearTableOnly(); addRows5(); resetUndoBaseline(); } return; }
+  recordLoaded = false;              // block all saves until this record has loaded
+  hadDataAfterLoad = false;
+  allowBlankSave = false;
+  dirty = false;
+  if (!db) {
+    if (!loadLocalInto()) { clearTableOnly(); addRows5(); resetUndoBaseline(); }
+    recordLoaded = true;
+    return;
+  }
   if (unsubscribe) unsubscribe();
   setSyncBadge('saving', '⟳ Loading…');
   unsubscribe = db.collection('billing').doc(activeKey)
@@ -333,18 +384,23 @@ function subscribeToDoc() {
         setSyncBadge('synced', '✓ Synced');
         return;
       }
-      if (snap.exists && (snap.data().rows || []).length) {
-        rebuildTableFromData(snap.data().rows || []);
+      const remoteRows = (snap.exists && snap.data().rows) || [];
+      if (remoteRows.some(r => !isRowEmpty(r))) {
+        rebuildTableFromData(remoteRows);
       } else if (!loadLocalInto()) {
+        // Cloud record is missing or only has blank rows — fall back to this
+        // device's local backup; otherwise start a fresh table.
         clearTableOnly();
         addRows5();
         resetUndoBaseline();
       }
+      recordLoaded = true;
       setSyncBadge('synced', '✓ Synced');
-    }, () => { setSyncBadge('offline', '✗ Offline — saved locally'); loadLocalInto(); });
+    }, () => { setSyncBadge('offline', '✗ Offline — saved locally'); loadLocalInto(); recordLoaded = true; });
 }
 
 function rebuildTableFromData(rows) {
+  if (rows.some(r => !isRowEmpty(r))) hadDataAfterLoad = true;
   isLoadingFromRemote = true;
   clearTableOnly();
   if (rows.length === 0) { addRows5(); isLoadingFromRemote = false; return; }
@@ -765,6 +821,7 @@ function addRows5() { for(let i=0;i<5;i++) addRow(); }
 
 function deleteRow(id) {
   document.getElementById('row-' + id)?.remove();
+  markDeliberateEmpty();
   updateSummary();
   scheduleSave();
 }
@@ -828,6 +885,7 @@ function getRows() {
 
 function clearEntries() {
   if (!confirm('Clear all line item entries?')) return;
+  allowBlankSave = true;             // this blank save is deliberate
   document.getElementById('lineBody').innerHTML = '';
   rowCount = 0;
   addRows5();
@@ -1121,7 +1179,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 init();
-// v3 — sticky manual descriptions, 3DE + Discing x2 categories, field 20 split into 20N/20S
+// v4 — data-loss protection: no saves before a record loads, viewers never write,
+//      blank tables can't overwrite real entries, hourly history snapshots
 </script>
 </body>
 </html>

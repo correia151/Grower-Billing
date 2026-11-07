@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Billing Data Recovery</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f0f2f5; color: #222; }
+  header { background: #7a1a1a; color: white; padding: 16px 24px; }
+  header h1 { font-size: 1.2rem; font-weight: 600; }
+  .container { max-width: 1000px; margin: 24px auto; padding: 0 16px; }
+  .card { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 1rem; font-weight: 600; color: #7a1a1a; margin-bottom: 10px; }
+  .intro { font-size: 0.9rem; line-height: 1.5; color: #444; }
+  .backup-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .meta { font-size: 0.82rem; color: #666; margin: 6px 0 10px; }
+  .meta b { color: #1a5c2a; }
+  .meta .warn { color: #c0392b; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+  th { background: #1a5c2a; color: white; padding: 6px 8px; text-align: left; }
+  td { padding: 4px 8px; border-bottom: 1px solid #eee; }
+  .btn { padding: 9px 16px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.85rem; font-weight: 600; margin-right: 8px; }
+  .btn-restore { background: #1a5c2a; color: white; }
+  .btn-restore:disabled { background: #999; cursor: not-allowed; }
+  .btn-dl { background: white; border: 2px solid #1a5c2a; color: #1a5c2a; }
+  .status { font-size: 0.85rem; font-weight: 700; margin-top: 8px; }
+  .status.ok { color: #1a5c2a; }
+  .status.err { color: #c0392b; }
+  .empty-note { color: #888; font-size: 0.9rem; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 0.75rem; font-weight: 700; }
+  .pill.good { background: #e8f5e9; color: #1a5c2a; }
+  .pill.bad { background: #fdf0ee; color: #c0392b; }
+</style>
+</head>
+<body>
+<header><h1>🛟 Grower Billing — Data Recovery</h1></header>
+<div class="container">
+  <div class="card">
+    <h2>How this works</h2>
+    <p class="intro">
+      The billing app keeps a backup of each grower/month on every device that was used to enter or view it.
+      Below is every backup stored <b>on this device</b>, compared with what the cloud currently has.
+      If a backup here has the entries the cloud lost, click <b>Restore to cloud</b>.
+      Nothing is changed until you click a restore button and confirm.
+      <br><br>
+      <b>Open this page on the device/browser your employee used to type the entries</b> — that device holds the most complete backup.
+    </p>
+  </div>
+  <div id="list"></div>
+</div>
+<script>
+const PROJECT = 'grower-billing';
+const API_KEY = 'AIzaSyAofzj9hQFg-wHMLLY9014MLcSjVgAefNg';
+const BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/billing/`;
+
+function isEmptyRow(r) {
+  return !(r.desc || Number(r.qty) || Number(r.price) || r.date || r.catVal || (r.fields && r.fields.length));
+}
+function fmt(n) { return '$' + Number(n||0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+// ── Firestore value (de)serialization for the REST API ──
+function toFs(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toFs) } };
+  if (typeof v === 'object') { const f = {}; for (const k in v) f[k] = toFs(v[k]); return { mapValue: { fields: f } }; }
+  return { stringValue: String(v) };
+}
+function fromFs(v) {
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromFs);
+  if ('mapValue' in v) { const o = {}; const f = v.mapValue.fields || {}; for (const k in f) o[k] = fromFs(f[k]); return o; }
+  if ('timestampValue' in v) return v.timestampValue;
+  return null;
+}
+
+async function cloudRows(key) {
+  try {
+    const res = await fetch(BASE + encodeURIComponent(key) + '?key=' + API_KEY);
+    if (res.status === 404) return { exists: false, rows: [] };
+    const d = await res.json();
+    if (!d.fields || !d.fields.rows) return { exists: true, rows: [] };
+    return { exists: true, rows: fromFs(d.fields.rows), updateTime: d.updateTime };
+  } catch (e) { return { error: String(e) }; }
+}
+
+function rowTable(rows) {
+  const r = rows.filter(x => !isEmptyRow(x));
+  if (!r.length) return '<p class="empty-note">No entries.</p>';
+  return `<table><tr><th>Date</th><th>Field</th><th>Category</th><th>Description</th><th>Qty</th><th>Price</th><th>Total</th></tr>` +
+    r.map(x => `<tr><td>${x.date||''}</td><td>${x.field||''}</td><td>${x.catCode?x.catCode+' – '+(x.catDesc||''):''}</td><td>${(x.desc||'').replace(/</g,'&lt;')}</td><td>${x.qty||''} ${x.unit||''}</td><td>${x.price?fmt(x.price):''}</td><td>${x.total?fmt(x.total):''}</td></tr>`).join('') + '</table>';
+}
+
+async function restore(key, idx) {
+  const data = backups[idx];
+  const n = data.rows.filter(r => !isEmptyRow(r)).length;
+  if (!confirm(`Restore ${n} entries to the cloud record "${key}"?\n\nThis replaces what the cloud currently has for ${key}.`)) return;
+  const el = document.getElementById('status-' + idx);
+  el.className = 'status'; el.textContent = 'Restoring…';
+  try {
+    const body = JSON.stringify({ fields: {
+      rows: toFs(data.rows.map((r, i) => ({ ...r, _order: r._order !== undefined ? r._order : i }))),
+      updatedAt: { timestampValue: new Date().toISOString() },
+      restoredFromLocalBackup: { timestampValue: new Date().toISOString() }
+    }});
+    const res = await fetch(BASE + encodeURIComponent(key) + '?key=' + API_KEY, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + (await res.text()).slice(0, 200));
+    // verify
+    const check = await cloudRows(key);
+    const cn = (check.rows || []).filter(r => !isEmptyRow(r)).length;
+    if (cn === n) {
+      el.className = 'status ok';
+      el.textContent = `✓ Restored ${n} entries to the cloud. Reload the billing app to see them.`;
+    } else {
+      el.className = 'status err';
+      el.textContent = `Wrote data but verification found ${cn} entries (expected ${n}). Check the app before trusting it.`;
+    }
+  } catch (e) {
+    el.className = 'status err';
+    el.textContent = '✗ Restore failed: ' + e + ' — your local backup is untouched; try again or use Download.';
+  }
+}
+
+function download(key, idx) {
+  const blob = new Blob([JSON.stringify(backups[idx], null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'backup_' + key + '.json';
+  a.click();
+}
+
+const backups = [];
+async function init() {
+  const listEl = document.getElementById('list');
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('gb_')) keys.push(k);
+  }
+  keys.sort();
+  if (!keys.length) {
+    listEl.innerHTML = '<div class="card"><h2>No backups on this device</h2><p class="intro">This browser has no saved billing backups. Try the device/browser that was used to enter the data (same browser profile, not private/incognito mode).</p></div>';
+    return;
+  }
+  for (const k of keys) {
+    let data;
+    try { data = JSON.parse(localStorage.getItem(k)); } catch (e) { continue; }
+    if (!data || !data.rows) continue;
+    const idx = backups.length;
+    backups.push(data);
+    const key = k.slice(3);
+    const n = data.rows.filter(r => !isEmptyRow(r)).length;
+    const total = data.rows.reduce((s, r) => s + (Number(r.total) || 0), 0);
+    const saved = data.updatedAt ? new Date(data.updatedAt).toLocaleString() : 'unknown';
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="backup-head"><h2>${key}</h2><span class="pill ${n ? 'good' : 'bad'}">${n ? n + ' entries' : 'empty'}</span></div>
+      <div class="meta">Backup on this device: <b>${n}</b> entries, work total <b>${fmt(total)}</b> — last saved locally: ${saved}<br>
+      <span id="cloud-${idx}">Checking what the cloud has…</span></div>
+      ${rowTable(data.rows)}
+      <div style="margin-top:12px;">
+        <button class="btn btn-restore" id="btn-${idx}" ${n ? '' : 'disabled'} onclick="restore('${key}', ${idx})">⬆ Restore to cloud</button>
+        <button class="btn btn-dl" onclick="download('${key}', ${idx})">⬇ Download backup file</button>
+      </div>
+      <div class="status" id="status-${idx}"></div>`;
+    listEl.appendChild(card);
+    cloudRows(key).then(c => {
+      const el = document.getElementById('cloud-' + idx);
+      if (c.error) { el.innerHTML = '<span class="warn">Could not reach the cloud to compare.</span>'; return; }
+      const cn = (c.rows || []).filter(r => !isEmptyRow(r)).length;
+      if (!c.exists) el.innerHTML = 'Cloud: <span class="warn">no record</span> for this month.';
+      else el.innerHTML = `Cloud currently has: <b>${cn}</b> entries${cn > n ? ' — <span class="warn">the cloud has MORE than this backup; restoring would lose the extra entries</span>' : ''}.`;
+    });
+  }
+}
+init();
+</script>
+</body>
+</html>
