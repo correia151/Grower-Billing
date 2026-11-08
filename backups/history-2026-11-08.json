@@ -1,0 +1,552 @@
+{
+  "documents": [
+    {
+      "name": "projects/grower-billing/databases/(default)/documents/billing_history/Tevelde_2026-11__2026-11-07_21",
+      "fields": {
+        "savedAt": {
+          "timestampValue": "2026-11-07T21:59:22.265Z"
+        },
+        "rows": {
+          "arrayValue": {
+            "values": [
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-02"
+                    },
+                    "fields": {
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "7"
+                          }
+                        ]
+                      }
+                    },
+                    "field": {
+                      "stringValue": "7"
+                    },
+                    "catVal": {
+                      "stringValue": "3D|Discing"
+                    },
+                    "desc": {
+                      "stringValue": "Field 7 – Discing"
+                    },
+                    "descManual": {
+                      "booleanValue": false
+                    },
+                    "qty": {
+                      "integerValue": "81"
+                    },
+                    "price": {
+                      "integerValue": "36"
+                    },
+                    "unit": {
+                      "stringValue": "AC"
+                    },
+                    "catCode": {
+                      "stringValue": "3D"
+                    },
+                    "catDesc": {
+                      "stringValue": "Discing"
+                    },
+                    "total": {
+                      "integerValue": "2916"
+                    },
+                    "_order": {
+                      "integerValue": "0"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-02"
+                    },
+                    "fields": {
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "6"
+                          }
+                        ]
+                      }
+                    },
+                    "field": {
+                      "stringValue": "6"
+                    },
+                    "catVal": {
+                      "stringValue": "3W|Wheelpacking"
+                    },
+                    "desc": {
+                      "stringValue": "Field 6 – Wheelpacking"
+                    },
+                    "descManual": {
+                      "booleanValue": false
+                    },
+                    "qty": {
+                      "integerValue": "98"
+                    },
+                    "price": {
+                      "integerValue": "20"
+                    },
+                    "unit": {
+                      "stringValue": "AC"
+                    },
+                    "catCode": {
+                      "stringValue": "3W"
+                    },
+                    "catDesc": {
+                      "stringValue": "Wheelpacking"
+                    },
+                    "total": {
+                      "integerValue": "1960"
+                    },
+                    "_order": {
+                      "integerValue": "1"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-03"
+                    },
+                    "fields": {
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "1"
+                          }
+                        ]
+                      }
+                    },
+                    "field": {
+                      "stringValue": "1"
+                    },
+                    "catVal": {
+                      "stringValue": "3D|Discing"
+                    },
+                    "desc": {
+                      "stringValue": "Field 1 – Discing"
+                    },
+                    "descManual": {
+                      "booleanValue": false
+                    },
+                    "qty": {
+                      "integerValue": "98"
+                    },
+                    "price": {
+                      "integerValue": "36"
+                    },
+                    "unit": {
+                      "stringValue": "AC"
+                    },
+                    "catCode": {
+                      "stringValue": "3D"
+                    },
+                    "catDesc": {
+                      "stringValue": "Discing"
+                    },
+                    "total": {
+                      "integerValue": "3528"
+                    },
+                    "_order": {
+                      "integerValue": "2"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-03"
+                    },
+                    "fields": {
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "3S"
+                          },
+                          {
+                            "stringValue": "20N"
+                          },
+                          {
+                            "stringValue": "R14"
+                          }
+                        ]
+                      }
+                    },
+                    "field": {
+                      "stringValue": "3S, 20N, R14"
+                    },
+                    "catVal": {
+                      "stringValue": "3B|Borders"
+                    },
+                    "desc": {
+                      "stringValue": "Field 3S, 20N, R14 – splitting Borders"
+                    },
+                    "descManual": {
+                      "booleanValue": true
+                    },
+                    "qty": {
+                      "integerValue": "10"
+                    },
+                    "price": {
+                      "integerValue": "130"
+                    },
+                    "unit": {
+                      "stringValue": "HR"
+                    },
+                    "catCode": {
+                      "stringValue": "3B"
+                    },
+                    "catDesc": {
+                      "stringValue": "Borders"
+                    },
+                    "total": {
+                      "integerValue": "1300"
+                    },
+                    "_order": {
+                      "integerValue": "3"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-04"
+                    },
+                    "fields": {
+                      "arrayValue": {}
+                    },
+                    "field": {
+                      "stringValue": ""
+                    },
+                    "catVal": {
+                      "stringValue": ""
+                    },
+                    "desc": {
+                      "stringValue": ""
+                    },
+                    "descManual": {
+                      "booleanValue": false
+                    },
+                    "qty": {
+                      "integerValue": "0"
+                    },
+                    "price": {
+                      "integerValue": "0"
+                    },
+                    "unit": {
+                      "stringValue": "AC"
+                    },
+                    "catCode": {
+                      "stringValue": ""
+                    },
+                    "catDesc": {
+                      "stringValue": ""
+                    },
+                    "total": {
+                      "integerValue": "0"
+                    },
+                    "_order": {
+                      "integerValue": "4"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "createTime": "2026-11-07T21:51:36.366027Z",
+      "updateTime": "2026-11-07T21:59:22.314510Z"
+    },
+    {
+      "name": "projects/grower-billing/databases/(default)/documents/billing_history/Tevelde_2026-11__2026-11-07_22",
+      "fields": {
+        "rows": {
+          "arrayValue": {
+            "values": [
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-02"
+                    },
+                    "fields": {
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "7"
+                          }
+                        ]
+                      }
+                    },
+                    "field": {
+                      "stringValue": "7"
+                    },
+                    "catVal": {
+                      "stringValue": "3D|Discing"
+                    },
+                    "desc": {
+                      "stringValue": "Field 7 – Discing"
+                    },
+                    "descManual": {
+                      "booleanValue": false
+                    },
+                    "qty": {
+                      "integerValue": "81"
+                    },
+                    "price": {
+                      "integerValue": "36"
+                    },
+                    "unit": {
+                      "stringValue": "AC"
+                    },
+                    "catCode": {
+                      "stringValue": "3D"
+                    },
+                    "catDesc": {
+                      "stringValue": "Discing"
+                    },
+                    "total": {
+                      "integerValue": "2916"
+                    },
+                    "_order": {
+                      "integerValue": "0"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-02"
+                    },
+                    "fields": {
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "6"
+                          }
+                        ]
+                      }
+                    },
+                    "field": {
+                      "stringValue": "6"
+                    },
+                    "catVal": {
+                      "stringValue": "3W|Wheelpacking"
+                    },
+                    "desc": {
+                      "stringValue": "Field 6 – Wheelpacking"
+                    },
+                    "descManual": {
+                      "booleanValue": false
+                    },
+                    "qty": {
+                      "integerValue": "98"
+                    },
+                    "price": {
+                      "integerValue": "20"
+                    },
+                    "unit": {
+                      "stringValue": "AC"
+                    },
+                    "catCode": {
+                      "stringValue": "3W"
+                    },
+                    "catDesc": {
+                      "stringValue": "Wheelpacking"
+                    },
+                    "total": {
+                      "integerValue": "1960"
+                    },
+                    "_order": {
+                      "integerValue": "1"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-03"
+                    },
+                    "fields": {
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "1"
+                          }
+                        ]
+                      }
+                    },
+                    "field": {
+                      "stringValue": "1"
+                    },
+                    "catVal": {
+                      "stringValue": "3D|Discing"
+                    },
+                    "desc": {
+                      "stringValue": "Field 1 – Discing"
+                    },
+                    "descManual": {
+                      "booleanValue": false
+                    },
+                    "qty": {
+                      "integerValue": "98"
+                    },
+                    "price": {
+                      "integerValue": "36"
+                    },
+                    "unit": {
+                      "stringValue": "AC"
+                    },
+                    "catCode": {
+                      "stringValue": "3D"
+                    },
+                    "catDesc": {
+                      "stringValue": "Discing"
+                    },
+                    "total": {
+                      "integerValue": "3528"
+                    },
+                    "_order": {
+                      "integerValue": "2"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-03"
+                    },
+                    "fields": {
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "3S"
+                          },
+                          {
+                            "stringValue": "20N"
+                          },
+                          {
+                            "stringValue": "R14"
+                          }
+                        ]
+                      }
+                    },
+                    "field": {
+                      "stringValue": "3S, 20N, R14"
+                    },
+                    "catVal": {
+                      "stringValue": "3B|Borders"
+                    },
+                    "desc": {
+                      "stringValue": "Field 3S, 20N, R14 – splitting Borders"
+                    },
+                    "descManual": {
+                      "booleanValue": true
+                    },
+                    "qty": {
+                      "integerValue": "10"
+                    },
+                    "price": {
+                      "integerValue": "130"
+                    },
+                    "unit": {
+                      "stringValue": "HR"
+                    },
+                    "catCode": {
+                      "stringValue": "3B"
+                    },
+                    "catDesc": {
+                      "stringValue": "Borders"
+                    },
+                    "total": {
+                      "integerValue": "1300"
+                    },
+                    "_order": {
+                      "integerValue": "3"
+                    }
+                  }
+                }
+              },
+              {
+                "mapValue": {
+                  "fields": {
+                    "date": {
+                      "stringValue": "2026-11-04"
+                    },
+                    "fields": {
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "R14"
+                          }
+                        ]
+                      }
+                    },
+                    "field": {
+                      "stringValue": "R14"
+                    },
+                    "catVal": {
+                      "stringValue": "3B|Borders"
+                    },
+                    "desc": {
+                      "stringValue": "Field R14 – splitting Borders"
+                    },
+                    "descManual": {
+                      "booleanValue": true
+                    },
+                    "qty": {
+                      "integerValue": "85"
+                    },
+                    "price": {
+                      "integerValue": "130"
+                    },
+                    "unit": {
+                      "stringValue": "HR"
+                    },
+                    "catCode": {
+                      "stringValue": "3B"
+                    },
+                    "catDesc": {
+                      "stringValue": "Borders"
+                    },
+                    "total": {
+                      "integerValue": "11050"
+                    },
+                    "_order": {
+                      "integerValue": "4"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "savedAt": {
+          "timestampValue": "2026-11-07T22:05:45.338Z"
+        }
+      },
+      "createTime": "2026-11-07T22:04:52.230409Z",
+      "updateTime": "2026-11-07T22:05:45.371705Z"
+    }
+  ]
+}
